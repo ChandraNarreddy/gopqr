@@ -129,7 +129,6 @@ func buildPQRDriver(logger *log.Logger) (*gopqr.Driver, error) {
 		EvenUsername:     s.EvenUsername,
 		EvenPassword:     s.EvenPassword,
 		ActiveCredential: s.ActiveCredential,
-		Rotating:         false,
 	}
 	pqrDriver.CredentialRefresher = func(pqrDriver *gopqr.Driver) {
 		secretInput := &secretsmanager.GetSecretValueInput{
@@ -178,7 +177,6 @@ func buildPQRDriver(logger *log.Logger) (*gopqr.Driver, error) {
 		pqrDriver.EvenUsername = s.EvenUsername
 		pqrDriver.EvenPassword = s.EvenPassword
 		pqrDriver.ActiveCredential = s.ActiveCredential
-		pqrDriver.Rotating = false
 		pqrDriver.ReleaseLock()
 		return
 	}
