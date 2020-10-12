@@ -1,2 +1,2 @@
-# go-pqr
+# gopqr
 Golang handler for rotating PostGres Credentials
