@@ -17,9 +17,9 @@ rotating credentials.
 
 Usage:
 1. Create the driver like this -
-	import go-pqr
+	import gopqr
 
-	pqrDriver := &go-pqr.Driver{
+	pqrDriver := &gopqr.Driver{
 	...
 	}
 
@@ -38,40 +38,74 @@ Usage:
 		sql.Register("postgresrotating", &Driver{})
 	}
 
-4. Zero touch credential rotation. Yay!!!
+4. Open the DB with the newly registered driver like this -
+	db, err := sqlx.Open("postgresrotating", "postgres://1.2.3.4:5432/mydb?sslmode=verify-full")
+	Please donot pass any credentials in the dsn string above.
+
+5. Zero touch credential rotation. Yay!!!
 */
 
 type rotaterEnum int
 
 const (
-	ODD_USER rotaterEnum = iota
-	ODD_PASSWORD
-	EVEN_USER
-	EVEN_PASSWORD
-	ACTIVE_CREDENTIAL
-	ODD_CREDENTIAL
-	EVEN_CREDENTIAL
+	oddUser rotaterEnum = iota
+	oddPassword
+	evenUser
+	evenPassword
+	activeCredential
+	oddCredential
+	evenCredential
 )
 
 func (d rotaterEnum) String() string {
 	return [...]string{"odd_username", "odd_password", "even_username", "even_password", "active_credential", "odd", "even"}[d]
 }
 
+// Driver represents a lib/pq compliant driver for rotating credentials.
+// It allows you to define an alternating set of credentials for your postgres
+// connections. The credentials can be thought of as an odd and even credential
+// set that are employed alternatively. During such alternations, if one of the
+// credentials results in an authentication failure, the driver falls back to
+// make the connection using the previous credential while asynchronously invoking
+// the CredentialsRefresher func defined within this driver to refresh both the
+// credentials.
 type Driver struct {
-	Odd_username        string
-	Odd_password        string
-	Even_username       string
-	Even_password       string
-	Active_credential   string
-	Rotating            bool
-	mux                 sync.Mutex
+	// OddUsername - Username for the odd credential
+	OddUsername string
+	// OddPassword - Password value for the odd credential
+	OddPassword string
+	// EvenUsername - Username for the even credential
+	EvenUsername string
+	// EvenPassword - Password value for the even credential
+	EvenPassword string
+	// ActiveCredential - Which one you wish as first active credential - "odd"/"even"
+	ActiveCredential string
+	mux              sync.Mutex
+	// CredentialRefresher func is what refreshes the credentials set and assigns
+	// refreshed values to Odd and even Usernames and Passwords. Please make sure
+	// that the function goes in these lines -
+	// func(d *gopqr.Driver) {
+	//		...logic to refresh the credential values odd and even
+	//		d.AcquireLock()
+	//		d.OddUsername = ..the value you fetched above..
+	//		d.OddPassword = ..the value you fetched above..
+	//		d.EvenUsername = ..the value you fetched above..
+	//		d.EvenPassword = ..the value you fetched above..
+	//		d.ActiveCredential = ..the value you fetched above..
+	//		d.ReleaseLock()
+	//		return
+	// }
 	CredentialRefresher func(*Driver)
 }
 
+// Open does the same thing as pq.Open() except that it uses the gopqr driver.
+// Please ensure to pass the DSN as "postgres://1.2.3.4:5432/mydb?sslmode=mode"
+// to your sql.Open() or sqlx.Open() implementations.
 func (d *Driver) Open(dsn string) (driver.Conn, error) {
-	//parse the odd and even pair from the string and
-	//fetch alternating pairs to call pq.Open() here and
-	//pass the DSN as "postgres://bob:secret@1.2.3.4:5432/mydb?sslmode=verify-full"
+	// parses the odd and even pair from the string and
+	// fetches alternating pairs to call pq.Open() here and
+	// passes the DSN as "postgres://user_name:password@1.2.3.4:5432/mydb?sslmode=verify-full"
+	// to the underlying pq handler
 	activeDSN, err := d.fetchActive(dsn)
 	if err != nil {
 		return nil, err
@@ -81,7 +115,6 @@ func (d *Driver) Open(dsn string) (driver.Conn, error) {
 	if connErr != nil {
 		if connErr.(*pq.Error).Code == "28000" || connErr.(*pq.Error).Code == "28P01" {
 			rotatedDSN, _ := d.fetchActive(dsn)
-			d.setRotating()
 			go d.refreshCredentials()
 			conn, connErr = pq.Open(rotatedDSN)
 			if connErr != nil {
@@ -96,23 +129,11 @@ func (d *Driver) Open(dsn string) (driver.Conn, error) {
 
 func (d *Driver) rotateActive() {
 	d.mux.Lock()
-	if d.Active_credential == ODD_CREDENTIAL.String() {
-		d.Active_credential = EVEN_CREDENTIAL.String()
+	if d.ActiveCredential == oddCredential.String() {
+		d.ActiveCredential = evenCredential.String()
 	} else {
-		d.Active_credential = ODD_CREDENTIAL.String()
+		d.ActiveCredential = oddCredential.String()
 	}
-	d.mux.Unlock()
-}
-
-func (d *Driver) setRotating() {
-	d.mux.Lock()
-	d.Rotating = true
-	d.mux.Unlock()
-}
-
-func (d *Driver) unsetRotating() {
-	d.mux.Lock()
-	d.Rotating = false
 	d.mux.Unlock()
 }
 
@@ -120,10 +141,12 @@ func (d *Driver) refreshCredentials() {
 	d.CredentialRefresher(d)
 }
 
+// AcquireLock acquires a lock on the driver object
 func (d *Driver) AcquireLock() {
 	d.mux.Lock()
 }
 
+// ReleaseLock releases any lock acquired on the driver object
 func (d *Driver) ReleaseLock() {
 	d.mux.Unlock()
 }
@@ -136,12 +159,12 @@ func (d *Driver) fetchActive(dsn string) (string, error) {
 	q := u.Query()
 	var activeUser, activePass string
 
-	if d.Active_credential == ODD_CREDENTIAL.String() {
-		activeUser = d.Odd_username
-		activePass = d.Odd_password
+	if d.ActiveCredential == oddCredential.String() {
+		activeUser = d.OddUsername
+		activePass = d.OddPassword
 	} else {
-		activeUser = d.Even_username
-		activePass = d.Even_password
+		activeUser = d.EvenUsername
+		activePass = d.EvenPassword
 	}
 	return fmt.Sprintf("postgres://%v:%v@%v%v?%v", activeUser, activePass, u.Host, u.Path, q.Encode()), nil
 }
