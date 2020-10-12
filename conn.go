@@ -1,4 +1,4 @@
-package go-pqr
+package gopqr
 
 import (
 	"database/sql/driver"
