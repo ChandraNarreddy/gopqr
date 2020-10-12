@@ -1,7 +1,7 @@
 package example
 
 import (
-	pqr "github.com/chandranarreddy/go-pqr"
+	"github.com/chandranarreddy/gopqr"
 
 	"database/sql"
 	"encoding/json"
@@ -104,7 +104,7 @@ func buildPQRDriver(logger *log.Logger) (*pqr.Driver, error) {
 		Active_credential: s.Active_credential,
 		Rotating:          false,
 	}
-	pqrDriver.CredentialRefresher = func(pqrDriver *pqr.Driver) {
+	pqrDriver.CredentialRefresher = func(pqrDriver *gopqr.Driver) {
 		secretInput := &secretsmanager.GetSecretValueInput{
 			SecretId:     aws.String(SECRETENTRY),
 			VersionStage: aws.String("AWSCURRENT"),
