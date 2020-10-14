@@ -9,9 +9,12 @@ gopqr driver works by alternating between odd and even pairs of credentials for 
 o refresh the credentials set, thereby avoiding a down-time. The 'CredentialRefresher' function is defined by the consumer of gopqr(you), when invoked it should fetch the latest set of credentials from storage such as a vault and reset the odd and even credentials in the driver. Make sure you do this within the protection of the inbuilt Mutex to avoid race conditions.
 
 ## Okay, how do I make it happen?
-If you have defined your postgres database service accounts to refresh every often, you can use this little utility to automatically refresh these credentials for you. Only requirement is that you need to have 2 such service accounts with similar privilege level for the sake of continuity while the other one is under rotation. Once you have created the second account, you are good to go!
+Please refer to the [sample](https://github.com/ChandraNarreddy/gopqr/blob/main/example/aws_sm_creds_pgr.go) code in the examples directory for usage of the driver by refreshing credentials stored in AWS Secrets Manager.
 
-Here is how you would create the driver - 
+### Instructions
+* If you have defined your postgres database service accounts to refresh every often, you can use this little utility to automatically refresh these credentials for you. Only requirement is that you need to have 2 such service accounts with similar privilege level for the sake of continuity while the other one is under rotation. Once you have created the second account, you are good to go!
+
+* Here is how you would create the driver - 
 
 ```
   pqr := &gopqr.Driver{
@@ -23,7 +26,7 @@ Here is how you would create the driver -
     }
 ```
 
-You will need to define a function that fetches the latest set of credentials from where they are stored such as from a vault or AWS Secrets Manager. This function is invoked by the driver upon encountering 'incorrect credentials' error when negotiating a new connection to the database.
+* You will need to define a function that fetches the latest set of credentials from where they are stored such as from a vault or AWS Secrets Manager. This function is invoked by the driver upon encountering 'incorrect credentials' error when negotiating a new connection to the database.
 ```
   pqr.CredentialRefresher = func(pqrDriver *gopqr.Driver) {
     ..
@@ -39,22 +42,22 @@ You will need to define a function that fetches the latest set of credentials fr
     return
   }
 ```
-Now register the newly minted driver like this - 
+* Now register the newly minted driver like this - 
 ```
   sql.Register("postgresrotating", pqrDriver)
 ```  
-Create the database dsn sans the credentials like this - 
+* Create the database dsn sans the credentials like this - 
 ```
-  dsn := fmt.Sprintf("postgres://%v/%v?sslmode=%v", DBADDR, DBNAME, DEFAULTSSLMODE)
+  dsn := fmt.Sprintf("postgres://%v/%v?sslmode=%v", MyDBAddr, MyDBName, 'require')
 ```
-Now, open the connection to the DB using the SQL implementation of your choice - 
+* Now, open the connection to the DB using the SQL implementation of your choice - 
 ```
   db, err := sqlx.Open("postgresrotating", dsn)
 ```
-You can use the SetConnMaxLifetime parameter to set when the connections timeout, this setting defines how frequently the database connections are alternated between the odd and the even credential.
+* You can use the SetConnMaxLifetime parameter to set when the connections timeout, this setting defines how frequently the database connections are alternated between the odd and the even credential.
 ```
-  db.SetConnMaxLifetime(time.Hour * DEFAULTSETCONNMAXLIFETIMEINHOURS)
+  db.SetConnMaxLifetime(time.Hour * MaxLifetimeInHours)
 ```
-When you rotate credentials for these accounts, remember to space them apart in time (greater than one multiple of SetConnMaxLifetime value above) so the driver does not end up with credentials invalid for both accounts when it attempts to make a connection to the database at the end of a lifetime window.
+* When you rotate credentials for these accounts, remember to space them apart in time (greater than one multiple of SetConnMaxLifetime value above) so the driver does not end up with credentials invalid for both accounts when it attempts to make a connection to the database at the end of a lifetime window.
 
-You can get creative with the CredentialRefresher function to introduce alerting capabilities in case the function fails to accurately refresh the credentials.
+* You can get creative with the CredentialRefresher function to introduce alerting capabilities in case the function fails to accurately refresh the credentials.
