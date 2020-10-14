@@ -1,4 +1,6 @@
 # gopqr
+![Go](https://github.com/ChandraNarreddy/gopqr/workflows/Go/badge.svg?branch=main)
+
 Golang handler for zero-touch rotating credentials Postgres Connections. Use this wrapper for lib/pq driver to facilitate zero-touch rotating credentials connections for your applications.
 
 ## Zero Touch Credentials Rotation
